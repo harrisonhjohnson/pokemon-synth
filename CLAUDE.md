@@ -4,7 +4,7 @@ Fire Red ROM hack: vendored CFRU (engine) + DPE (species) with SYNTH changes. De
 
 ## Setup (first run on a new machine)
 
-Run `./setup.sh`. It needs devkitARM at `/opt/devkitpro` (devkitPro pacman), `python3` with `pillow`, and libpng. It clones pret/pokefirered + pret/agbcc and builds the vanilla base ROM from source — never ask the user for a ROM dump.
+Run `./setup.sh`. It needs devkitARM at `/opt/devkitpro` (devkitPro pacman), `python3` with `pillow`, and libpng. It clones pret/pokefirered + pret/agbcc and builds the vanilla base ROM from source — never ask the user for a ROM dump. On Windows, work inside WSL2 (repo cloned in the WSL filesystem, not /mnt/c); `bin/` binaries are macOS arm64 — on other platforms build wav2agb/mid2agb from source if audio conversion is needed (see README platform notes).
 
 ## Build chain (order matters: DPE first, then CFRU)
 

@@ -17,10 +17,37 @@ A Fire Red ROM hack with customizable "Synth" species. Everything you need is in
 | `env.sh` | PATH setup for devkitARM + local tools (`source env.sh` before building) |
 | `bin/` | Audio conversion tools (mid2agb; wav2agb built from [ipatix/wav2agb](https://github.com/ipatix/wav2agb)) |
 
-## One-time setup (macOS)
+## One-time setup
 
-1. Install devkitARM to `/opt/devkitpro` via [devkitPro pacman](https://devkitpro.org/wiki/Getting_Started), plus `python3`, `pip install pillow`, and libpng (`brew install libpng`).
-2. `./setup.sh` — clones pret/pokefirered + pret/agbcc (public), builds the compiler and the vanilla base ROM, and seeds `DPE/BPRE0.gba`.
+All platforms need: devkitARM at `/opt/devkitpro`, `python3` with `pillow` (`pip install pillow`), libpng, and [mGBA](https://mgba.io/) to play. Then run `./setup.sh` — it clones pret/pokefirered + pret/agbcc (public), builds the compiler and the vanilla base ROM, and seeds `DPE/BPRE0.gba`.
+
+### macOS (primary dev platform — Apple Silicon tested)
+
+1. Install [devkitPro pacman](https://devkitpro.org/wiki/Getting_Started), then `sudo dkp-pacman -S gba-dev`.
+2. `brew install libpng` and `pip3 install pillow`.
+3. `./setup.sh`
+
+### Windows
+
+Use **WSL2 (Ubuntu)** — the pret base-ROM build and these shell scripts assume a Unix environment, and WSL is far smoother than MSYS2 for the full chain:
+
+1. Install WSL2 + Ubuntu, clone this repo *inside* WSL (not on `/mnt/c` — builds are much slower there and line endings can break scripts).
+2. Follow the Linux steps below inside WSL.
+3. Run mGBA on the Windows side; the built `synth-base.gba` is reachable from Explorer via `\\wsl$`.
+
+Native Windows/MSYS2 is possible (CFRU's own `CFRU/INSTALL.md` documents it) but you'd still need a separate path for the pret base-ROM build — not recommended.
+
+### Linux (or WSL2)
+
+1. Install [devkitPro pacman](https://devkitpro.org/wiki/devkitPro_pacman), then `sudo dkp-pacman -S gba-dev` (installs to `/opt/devkitpro`).
+2. `sudo apt install build-essential libpng-dev python3-pip && pip3 install pillow`
+3. `./setup.sh`
+
+### Platform notes
+
+- `bin/mid2agb` and `bin/wav2agb` are **macOS arm64 binaries**. They're only needed for audio conversion (adding new music/cries), not for the standard build. On PC, build them from source: wav2agb from [ipatix/wav2agb](https://github.com/ipatix/wav2agb), mid2agb from the pret pokefirered `tools/` directory (built automatically by its `make`).
+- `env.sh` prepends `/opt/devkitpro/devkitARM/bin` and this repo's `bin/` to PATH — correct on macOS and Linux/WSL alike.
+- Launching mGBA: macOS `open -a mGBA synth-base.gba`; Linux `mgba-qt synth-base.gba`; Windows just open the file in mGBA.
 
 ## Build the SYNTH ROM
 
