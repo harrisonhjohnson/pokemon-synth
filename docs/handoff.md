@@ -1,0 +1,133 @@
+# Pokémon SYNTH — Engineering Log & Handoff
+
+**Last updated:** 2026-07-21 (slice session 1)
+**Workspace:** `~/projects/pokemon-synth/`
+**Design bible:** `~/Downloads/Pokemon Synth/Claude/` (9 spec files — `claude.md` there is the project guide)
+**Playable ROM:** `~/projects/pokemon-synth/synth-base.gba` (open in mGBA)
+
+---
+
+## Engine decision
+
+**CFRU (master) + DPE (Unbound branch)** on a source-built vanilla Fire Red base.
+
+- Deciding criterion was "all generations": CFRU+DPE ships Gen 1–8 **including Hisui/Legends Arceus mons** (that's the Unbound branch's contribution). Gen 9 (~120 species) remains as a scripted-import project — sprites exist in community repos; the design needs Gen 9 *species*, not Gen 9 *mechanics*.
+- FRLG-Plus (pokefirered decomp) was evaluated and builds/boots on this machine (`FRLG-Plus/`) — kept as reference, rejected as base because it's Gen 3 engine/dex only.
+- The base ROM is **compiled from source** via pret's `pokefirered` decomp (`pokefirered/`) — byte-identical to retail BPRE v1.0 (sha1 `41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc`). No cartridge dump needed, no downloads.
+
+## Build protocol (memorize this)
+
+```sh
+cd ~/projects/pokemon-synth && source env.sh   # devkitARM + tools + local bin on PATH
+
+# Order is DPE first, then CFRU on DPE's output:
+cd DPE  && rm -f generatedrepoints && python3 scripts/make.py          # BPRE0.gba -> test.gba
+cd ../CFRU && rm -f generatedrepoints && cp ../DPE/test.gba BPRE0.gba \
+        && python3 scripts/make.py                                     # -> test.gba
+cp test.gba ../synth-base.gba
+```
+
+- `DPE/BPRE0.gba` = copy of `pokefirered/pokefirered.gba` (the source-built vanilla ROM).
+- After **any header or config change** in CFRU or DPE: `rm -rf build` in that repo — the incremental build silently reuses objects compiled with stale `NUM_SPECIES`/flags.
+- **Always `rm generatedrepoints` before insertion.** It's a repoint cache; stale or dummy-ROM-poisoned caches carpet-bomb the output ROM (see Gotchas).
+- Verify every build: `xxd -s 0xA0 -l 12 test.gba` must read `POKEMON FIRE`.
+
+## State after slice session 1
+
+| Piece | Status |
+|---|---|
+| SPECIES_SYNTH (0x50E, dex #906, sprite idx 1260) | ✅ registered, in-game verified |
+| SPECIES_SYNTH2 (0x50F, dex #907, idx 1261) | ✅ registered; untested in-game (evolution at Lv16) |
+| Sprites | PixelLab teal dino = SYNTH, mane-fox = SYNTH2; 64×64 4bpp, shared 15-color palette; shinies are hue-shifts (purple). Sources: `~/Downloads/Pokemon Synth/Art/Pixel Lab Sprites/` |
+| Starter | All 3 lab balls + `sStarterSpecies` (0x3F5D2C) give SYNTH — patched via CFRU `bytereplacement` |
+| Base stats | Placeholder: 300 BST flat 50s, Normal-type, ability **Trace** (per spec), genderless, no-breed. Runtime override engine comes later |
+| Learnset | Scratch/Growl @1, Quick Atk @7, Bite @12, Slash @18, Crunch @25; SYNTH2 shares it |
+| Evolution | SYNTH → SYNTH2 at Lv16, cannot be cancelled not yet enforced (spec rule #4 — TODO) |
+| Cry | Borrowed (Grookey's) — placeholder |
+| Icon | Placeholder; shared-palette mapping means colors may render off |
+
+**Open verification item:** player's Synth showed nameplate "Mon" — confirm whether that was a user-entered nickname or a species-name table bug (summary screen should say SYNTH).
+
+## Gotchas (each cost real time — do not relearn)
+
+1. **`generatedrepoints` cache poisoning.** DPE/CFRU insertion caches repoint locations in `generatedrepoints` at repo root. Running insertion against a dummy/zero ROM filled it with ~8M bogus offsets; the next real build stamped one pointer value over the entire ROM (header destroyed, mGBA refuses to load). Fix/prevention: delete the file before insertions; never run insertion against a fake ROM.
+2. **`bytereplacement` ends inside an unclosed `#ifdef UNBOUND`.** Anything appended at the tail is silently skipped in our build. Insert patches **above** that block, and always verify the actual bytes in the output ROM (`xxd -s <offset>`), never trust a clean insert log.
+3a. **Dual-ownership audit COMPLETE (2026-07-21, agent-run).** Full inventory: only TWO dual-ownership points exist. `gLevelUpLearnsets` (EXPAND_MOVESETS — off, fixed) and `gBaseExpBySpecies` (GEN_7_BASE_EXP_YIELD — ON; CFRU's exp table ended before SYNTH → OOB read on defeating a SYNTH; fixed by adding SYNTH=60/SYNTH2=140 entries to `CFRU/src/Tables/experience_tables.c`, ships next build). Every other per-species table (base stats, evos, names, pics, palettes, icons, cries, dex, TM/tutor, egg moves) reads through vanilla pointers that DPE repoints — DPE wins, SYNTH covered. When adding future species: touch DPE's tables + CFRU's species.h + these TWO CFRU tables.
+3b. **CFRU/DPE dual-ownership tables (original incident).** CFRU `src/config.h` `#define EXPAND_MOVESETS` made CFRU link its **own** learnset table, shadowing DPE's (symptom: SYNTH had zero moves while DPE's data sat correct in the ROM). Commented out per the flag's own comment. ⚠️ **Audit for other dual-ownership tables before building the stat-override engine** — this is the #1 slice risk (gBaseStats read sites) showing up in real life.
+4. **Branch pairing:** DPE **must** be on the `Unbound` branch to match CFRU master's species numbering (master diverges at 0x397; Urshifu-R-Giga is 0x4F3 vs 0x50D). DPE master + CFRU master silently corrupts all species data ≥0x397. `DPE/scripts/make.py` ROM_NAME was changed from "Pokemon Unbound.gba" to "BPRE0.gba"; insert offset on this branch is 0x1650000.
+5. **DPE table files can contain multiple arrays** (Unbound branch especially). Never append entries with a blind "insert before last `};`" — verify which array the insertion landed in (Pokedex_Data_Table.c has trailing `gAlternateDex*` tables that ate our dex entries).
+6. **Moves are stamped at mon creation.** Fixing a learnset does not retroactively give an existing save's mon its moves — New Game (or level-up/relearner) required.
+7. **Battle sprite orientation:** front sprites face left (toward player), back sprites face right (toward enemy). PixelLab sheet poses mostly face left — back-sprite tiles need a horizontal flip.
+8. **Icons are 32×64** (two stacked 32×32 animation frames), 4bpp uncompressed, and use one of 3 **shared** palettes (`gMonIconPaletteIndices`) — the PNG's own palette is ignored at runtime. **A new icon MUST be authored in the shared palette's exact index layout** or it renders as rainbow garbage in the party menu (QA run 1 finding). Protocol: take a donor icon PNG with the same palette index (Squirtle=pal 0, Grookey=pal 1), nearest-map every color to the donor's 16 slots (never slot 0 = transparent), save with the donor's palette verbatim. Done for SYNTH (pal 0) + SYNTH2 (pal 1), 2026-07-21.
+9. **Back-sprite PNG doubles as the shiny palette source** (`gBackShinySprite*` = back tiles + shiny palette). Front PNG's palette = normal palette. They must share index layout.
+10. **`scripts/tm_tutor.py` hardcodes `SPECIES_COUNT`** — does not read `NUM_SPECIES`; bump manually when adding species (done: now `0x50F + 1`).
+
+## Toolchain facts
+
+- devkitARM 16.1.0 native arm64 (no Rosetta), via devkitPro pacman. mGBA 0.10.5 (brew cask).
+- `wav2agb` + `mid2agb` built from source in `bin/` (mid2agb came from the pokeemerald-mac checkout).
+- agbcc built + installed into both decomp checkouts (`agbcc/`).
+- Python 3.14 works for all repos' build scripts despite "downgrade to 3.7" warnings — the one real 3.x hazard was behavioral, not syntax (see Gotcha 1 for what actually bit).
+- CFRU insert offset 0x900000; DPE (Unbound) 0x1650000; no collision.
+
+## Art pipeline division of labor (settled by experiment, 2026-07-21)
+
+- **PixelLab (creator): 64×64 battle sprite origination ONLY** — the 38-sprite Form set. This is now the sole external art dependency.
+- **In house (Claude): everything at 32×32 and below + all derivation/compliance** — palettes, shinies, type recolors, icon idle animations (classic 1px-bounce frame 2 shipped), overworld sprites (16×16 hand-authored dino passed eyeball QA in 2 iterations), sheet slicing, format packaging.
+- Icon base art TODO: hand-draw the 32×32 (current one is a muddy downscale — the experiment showed authored beats downscaled at small sizes).
+- Method for authored pixel art: palette-letter grid in Python → render → Read the PNG → iterate. 2–3 rounds typical.
+
+## Repeatable build/QA loop
+
+Skill: **`/synth-build`** — full chain build + verification + mGBA launch (+ optional fresh save). QA findings go into this doc's state table + Gotchas after each run.
+
+## Slice acceptance test (creator's QA checklist, 2026-07-21)
+
+1. Starter has the Synth Menu ← **not built yet** (next mountain)
+2. A battle works ← passing as of session 1
+3. Menu pieces functional: stat editor / type selector / ability selector ← **not built yet**; build order: SynthData+save block → menu shell from party screen → stat editor → type selector → ability selector
+
+QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname), battle ✅, icon anim ✅ (art fixed via shared-palette remap).
+
+**Slice session 2 (2026-07-21): Synth Menu MVP shipped.**
+- `CFRU/include/new/synth.h` + `src/synth_core.c`: SynthData (40B×6), personality-keyed, lazy-allocated on first menu open; SynthValidateStats with clamp + overspend clawback.
+- **Save storage:** carved former PC Box 22's region — `gSynthSaveData` @ 0x203D8DC (240B used, 0x6CC reserved; see ram_locs.h). TOTAL_BOXES_COUNT 25→24 (3 pointer tables edited in pokemon_storage_system.c). Persists via flash sectors 30/31 automatically; wiped on New Game automatically. Caveat: NOT persisted by link saves (sector 30/31 skipped there).
+- **Party menu:** "Synth" action (MENU_SYNTH=60) appears after Summary for Synth species only; strings in `strings/synth.string`.
+- **`src/synth_menu.c`:** fullscreen stat editor (DexNav-skeleton): d-pad row select, left/right adjust, live budget line (used/total), caps + budget enforced, B exits. MVP notes: exits to start menu (not back into party menu); edits SynthData only — **battle stats not yet overridden** (hooks are next); menu opened via replaced CB2 leaks party-menu heap allocs (benign short-term).
+- Audit fix shipped: gBaseExpBySpecies SYNTH entries.
+
+## Next sessions (vertical slice order)
+
+1. **Audit dual-ownership tables** (CFRU config flags vs DPE data) — before any engine work.
+2. **SynthData struct + save block** — keyed to **personality value**, never party/box slot (identity decision, save-corruption risk).
+3. Stat/type override hooks (`IsSynthMon()`, `GetSynthBaseBudget()`) — find ALL gBaseStats read sites in CFRU source.
+4. 18-type starter picker in Oak's lab script (CFRU scrolling multichoice).
+5. Synth menu (3-tab editor per `specs/synth_menu.md`).
+6. Rival fight 1 with fixed-budget Synth.
+7. Uncancellable evolution enforcement (spec decision #21).
+
+## QA bug log
+
+- **Synth Menu black screen / crash (QA runs 2-3) — ROOT CAUSE FOUND via diagnostic-backdrop build:** `InitWindows` fails (red backdrop) when the Synth screen is launched directly from a `CursorCb` while the party menu is still alive — its heap allocations starve the window system, and (pre-guards) drawing through invalid windows corrupted memory → "Jumped to invalid address" on next input. **Fix: never `SetMainCallback2` from a party-menu cursor callback — use the official teardown: `sPartyMenuInternal->exitCallback = CB2_YourScreen; Task_ClosePartyMenu(taskId);`** (pattern from CursorCb_Summary). Diagnostic-backdrop technique worth reusing: backdrop palette writes work even when windows fail — use color as a status channel QA can report.
+- **Cosmetic, open:** party menu bottom-left message strip shows garbled glyphs when the action menu is open (see QA screenshot 2026-07-21) — possibly pre-existing CFRU quirk, possibly fallout from our menu string; check before/after removing MENU_SYNTH.
+- **Process rule: never drive the game via OS keystroke automation (osascript System Events) while Harrison is using the machine** — keystrokes land in whatever window has focus (nearly disrupted an unrelated terminal session). Future self-serve driving: mGBA's Lua scripting (GUI Tools menu — injects into the emu core, no OS focus) or the GDB stub. Until then, in-game verification is Harrison's step.
+
+## Synth Menu rendering bug — investigation state (2026-07-21, UNRESOLVED)
+
+Solo debug loop established: `CB2_SynthMenuBootDebug` hook (hooks file, currently REMOVED from release; re-add to boot straight into the menu with dummy data — scratchpad ROM `synth-menudebug.gba`). GDB stub works: `mGBA -g` + `arm-none-eabi-gdb -batch` with breakpoints from offsets.ini (addresses shift every build!).
+
+**Established facts (GDB-verified):** DISPCNT/BG0CNT correct; palettes+backdrop path works (VBlank alive); windows allocate correctly (gWindows populated, buffers valid); window DRAWS complete; but window tile+map data NEVER reaches VRAM (0x600xxxx empty). Raw CPU writes to VRAM DO display (full-map fill = white screen ✓). Scroll ruled out. COPYWIN_BOTH=3 correct. CFRU's BPRE.ld addresses verified against pokefirered.map — all correct.
+
+**Contradiction unresolved:** every precondition in the decomp source passes, yet CopyWindowToVram's transfers vanish. DexNav-chassis clone made InitWindows FAIL outright (red) — worse, and bisects (bg3 buffer, multi-bg windows) didn't isolate it. **Next test (needs Harrison, 1 click): open DexNav from the start menu in the real game — if DexNav's GUI is ALSO blank/broken in OUR build, the problem is systemic to our build config, not synth_menu.c.** Suspects then: build flags, insertion clobbering vanilla code near the window/DMA system, or the CFRU master branch itself.
+
+Debug-loop lessons: backdrop-color diagnostics work great; solo debug ROM + screenshot ≈ 40s/iteration; `pkill -f mGBA` kills Harrison's session too — use targeted PIDs.
+
+**Session 2 continued — STILL UNRESOLVED after ~10 more iterations. New verified facts:**
+- Found + fixed a REAL latent bug (not the renderer): CFRU's linker.ld places .bss/COMMON in ROM, so ALL mutable `static` vars in new .c files are silently non-functional. Moved menu state to fixed EWRAM (`gSynthMenuState` @ 0x203D9CC, in the carved Box-22 region). **RULE: never use a mutable static in CFRU src — use a fixed address in ram_locs.h/synth.h.** (This did NOT fix rendering but was a genuine bug that would have caused chaos later.)
+- Direct CPU blit of window tileData→VRAM (same addresses the raw-probe white-screen used) ALSO doesn't display. So: raw full-map probe shows white ✓, but per-window tile+map writes don't. Contradiction still unexplained. gWindows[0].tileData is a valid EWRAM ptr (0x2000820) per GDB.
+- **STOPPED iterating — thrash without a model. NEXT SESSION MUST START WITH THE DEXNAV DATAPOINT (never actually obtained):** open DexNav in the real game (Start menu / PokéTools). Blank→systemic build problem (compare vs stock CFRU, suspect our insertions/flags). Works→isolate what synth_menu does differently, possibly rebuild against a hello-world CFRU custom-screen that's known to work. Consider: ask CFRU community/docs directly, or diff a minimal working CFRU fullscreen example.
+- Current release build: menu opens to known-broken teal, B exits cleanly, no corruption. Everything else (species, sprites, starter, save carve, party option) works.
+
+## Verification protocol
+
+Build → header check (`POKEMON FIRE` at 0xA0) → patched-byte spot-checks → boot in mGBA → **play the actual path** (title → New Game → lab → ball → battle). "Inserted OK" proves nothing; screenshots or it didn't happen.

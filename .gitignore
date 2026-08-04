@@ -1,0 +1,14 @@
+# Sub-repos — cloned by setup.sh, tracked in their own repos
+CFRU/
+DPE/
+pokefirered/
+agbcc/
+FRLG-Plus/
+
+# ROMs, saves, savestates — never commit; build the ROM from source (see README)
+*.gba
+*.sav
+*.ss1
+
+.DS_Store
+tools-src/
