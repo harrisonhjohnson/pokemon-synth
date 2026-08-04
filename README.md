@@ -1,33 +1,30 @@
 # Pokémon SYNTH
 
-A Fire Red ROM hack built on [CFRU](https://github.com/Skeli789/Complete-Fire-Red-Upgrade) (Complete Fire Red Upgrade) and [DPE](https://github.com/Skeli789/Dynamic-Pokemon-Expansion) (Dynamic Pokémon Expansion). This repo is the workspace root: docs, art, tooling, and setup. The actual engine changes live in two companion repos, both on their `synth` branch:
+A Fire Red ROM hack with customizable "Synth" species. Everything you need is in this one repo — the modified [CFRU](https://github.com/Skeli789/Complete-Fire-Red-Upgrade) engine, the modified [DPE](https://github.com/Skeli789/Dynamic-Pokemon-Expansion) species expansion, design docs, art, and build tooling. No ROM dump is needed: the vanilla base is built from source via [pret/pokefirered](https://github.com/pret/pokefirered).
 
-- [pokemon-synth-cfru](https://github.com/harrisonhjohnson/pokemon-synth-cfru) — SYNTH core engine, synth menu, config/table changes
-- [pokemon-synth-dpe](https://github.com/harrisonhjohnson/pokemon-synth-dpe) — SYNTH species line (sprites, stats, dex data)
-
-No ROMs are committed anywhere. The vanilla Fire Red base is **built from source** via [pret/pokefirered](https://github.com/pret/pokefirered) — no dump needed.
+**Using Claude Code?** Clone this repo, open Claude Code in it, and say *"set up and build the SYNTH ROM"* — `CLAUDE.md` has the full protocol and gotchas.
 
 ## Repo map
 
 | Path | What it is |
 |---|---|
+| `CFRU/` | Complete Fire Red Upgrade + SYNTH engine (synth core, synth menu, patches) |
+| `DPE/` | Dynamic Pokémon Expansion + SYNTH species (sprites, stats, dex data) |
 | `docs/handoff.md` | Build protocol, current state, and gotchas — **read this first** |
 | `docs/design/` | Design specs (synth system, menu, gym leaders, story, postgame, QoL) |
 | `art/` | Concept art and sprite sources |
-| `setup.sh` | Clones sub-repos and builds the vanilla base ROM |
+| `setup.sh` | Clones public upstreams (pret) and builds the vanilla base ROM |
 | `env.sh` | PATH setup for devkitARM + local tools (`source env.sh` before building) |
 | `bin/` | Audio conversion tools (mid2agb; wav2agb built from [ipatix/wav2agb](https://github.com/ipatix/wav2agb)) |
 
-`FRLG-Plus/` may exist locally as an exploratory alternate base; it is not part of the build.
+## One-time setup (macOS)
 
-## One-time setup
-
-1. Install devkitARM to `/opt/devkitpro` via [devkitPro pacman](https://devkitpro.org/wiki/Getting_Started), plus `python3`, `pip install pillow`, and libpng.
-2. `./setup.sh` — clones CFRU/DPE (synth branches) + pret/pokefirered + pret/agbcc, builds the compiler and the vanilla base ROM, and seeds `DPE/BPRE0.gba`.
+1. Install devkitARM to `/opt/devkitpro` via [devkitPro pacman](https://devkitpro.org/wiki/Getting_Started), plus `python3`, `pip install pillow`, and libpng (`brew install libpng`).
+2. `./setup.sh` — clones pret/pokefirered + pret/agbcc (public), builds the compiler and the vanilla base ROM, and seeds `DPE/BPRE0.gba`.
 
 ## Build the SYNTH ROM
 
-Order matters: DPE first, then CFRU.
+Order matters: DPE first (species data), then CFRU (engine) on top of DPE's output.
 
 ```sh
 cd "$(git rev-parse --show-toplevel)" && source env.sh
@@ -54,3 +51,7 @@ Moves/abilities are stamped at Pokémon creation — learnset/stat changes need 
 ## QA notes
 
 Log findings in `docs/handoff.md` (state table + Gotchas section) so the next person inherits them.
+
+## Upstream provenance
+
+`CFRU/` and `DPE/` are vendored snapshots with SYNTH changes on top. Upstream bases: CFRU master @ `b637a27` (Skeli789), DPE Unbound @ `fe058e0` (Skeli789). Full-history copies (upstream + synth branches) are archived at [pokemon-synth-cfru](https://github.com/harrisonhjohnson/pokemon-synth-cfru) and [pokemon-synth-dpe](https://github.com/harrisonhjohnson/pokemon-synth-dpe) if an upstream merge is ever needed.

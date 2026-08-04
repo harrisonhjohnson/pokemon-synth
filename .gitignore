@@ -1,6 +1,4 @@
-# Sub-repos — cloned by setup.sh, tracked in their own repos
-CFRU/
-DPE/
+# Public upstreams — cloned by setup.sh, never modified here
 pokefirered/
 agbcc/
 FRLG-Plus/

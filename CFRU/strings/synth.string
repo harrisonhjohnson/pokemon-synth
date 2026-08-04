@@ -1,0 +1,29 @@
+#org @gMenuText_Synth
+Synth
+
+#org @gText_SynthTitle
+SYNTH TUNING
+
+#org @gText_SynthBudget
+Budget
+
+#org @gText_SynthHP
+HP
+
+#org @gText_SynthAtk
+Attack
+
+#org @gText_SynthDef
+Defense
+
+#org @gText_SynthSpAtk
+Sp. Atk
+
+#org @gText_SynthSpDef
+Sp. Def
+
+#org @gText_SynthSpeed
+Speed
+
+#org @gText_SynthHelp
+DPAD: Select/Adjust  B: Exit

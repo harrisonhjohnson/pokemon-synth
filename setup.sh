@@ -1,12 +1,10 @@
 #!/bin/sh
-# Clone everything the SYNTH workspace needs, next to this script.
+# One-time setup: clone public upstreams and build the vanilla base ROM.
 # Prereq: devkitARM at /opt/devkitpro (install via devkitPro pacman),
 # plus: python3, pillow (pip install pillow), libpng.
 set -e
 cd "$(dirname "$0")"
 
-[ -d CFRU ] || git clone -b synth https://github.com/harrisonhjohnson/pokemon-synth-cfru.git CFRU
-[ -d DPE ]  || git clone -b synth https://github.com/harrisonhjohnson/pokemon-synth-dpe.git DPE
 [ -d agbcc ] || git clone https://github.com/pret/agbcc.git
 [ -d pokefirered ] || git clone https://github.com/pret/pokefirered.git
 
