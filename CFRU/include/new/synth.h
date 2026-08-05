@@ -91,6 +91,7 @@ struct SynthMenuState
 {
     struct Pokemon* mon;
     struct SynthData* data;
+    u8* tilemapPtr; //bg3 tilemap buffer, alive only during CB2_SynthMenu init
     u8 selectedStat;
     u8 windowsOk;
     u8 padding[2];

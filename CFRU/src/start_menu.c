@@ -146,8 +146,7 @@ const u8* const sStartMenuDescPointers[] =
 static bool8 CanSetUpSecondaryStartMenu(void)
 {
 	#ifdef FLAG_SYS_DEXNAV
-	if (FlagGet(FLAG_SYS_DEXNAV) && FlagGet(FLAG_SYS_POKEDEX_GET))
-		return TRUE;
+	return TRUE; //SYNTH QA: DexNav ungated from game start (renderer datapoint)
 	#endif
 
 	#ifdef FLAG_SYS_QUEST_LOG
@@ -224,10 +223,7 @@ static void BuildPokeToolsMenu(void)
 {
 	sNumStartMenuItems = 0;
 
-	#ifdef FLAG_SYS_DEXNAV
-	if (FlagGet(FLAG_SYS_DEXNAV) && FlagGet(FLAG_SYS_POKEDEX_GET))
-	#endif
-		AppendToStartMenuItems(STARTMENU_DEXNAV);
+	AppendToStartMenuItems(STARTMENU_DEXNAV); //SYNTH QA: ungated from game start
 
 	#ifdef FLAG_SYS_QUEST_LOG
 	if (FlagGet(FLAG_SYS_QUEST_LOG))

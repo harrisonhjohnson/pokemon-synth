@@ -11,6 +11,7 @@
 #include "../include/scanline_effect.h"
 #include "../include/sound.h"
 #include "../include/string_util.h"
+#include "../include/task.h"
 #include "../include/text.h"
 #include "../include/text_window.h"
 #include "../include/window.h"
@@ -45,11 +46,14 @@ enum
 
 enum SynthBgs { SBG_TEXTBOX, SBG_TEXT_2, SBG_TEXT, SBG_BACKGROUND }; //DexNav chassis
 
-static const struct WindowTemplate sSynthWinTemplates[SYNTH_WINDOW_COUNT + 1] =
+//MUST be 4-aligned: vanilla InitWindows copies templates with word loads, and
+//ARM7TDMI rotates unaligned LDRs — a 2-aligned array scrambles every field
+//(root cause of the 2026-07/08 renderer bug; struct's natural align is only 2).
+static const struct WindowTemplate sSynthWinTemplates[SYNTH_WINDOW_COUNT + 1] __attribute__((aligned(4))) =
 {
 	[WIN_SYNTH_TITLE] =
 	{
-		.bg = SBG_TEXTBOX,
+		.bg = SBG_TEXT,
 		.tilemapLeft = 1,
 		.tilemapTop = 0,
 		.width = 28,
@@ -59,7 +63,7 @@ static const struct WindowTemplate sSynthWinTemplates[SYNTH_WINDOW_COUNT + 1] =
 	},
 	[WIN_SYNTH_STATS] =
 	{
-		.bg = SBG_TEXTBOX,
+		.bg = SBG_TEXT,
 		.tilemapLeft = 1,
 		.tilemapTop = 3,
 		.width = 18,
@@ -69,7 +73,7 @@ static const struct WindowTemplate sSynthWinTemplates[SYNTH_WINDOW_COUNT + 1] =
 	},
 	[WIN_SYNTH_HELP] =
 	{
-		.bg = SBG_TEXTBOX,
+		.bg = SBG_TEXT,
 		.tilemapLeft = 0,
 		.tilemapTop = 18,
 		.width = 30,
@@ -94,12 +98,7 @@ static const struct TextColor sSynthText      = {1, 2, 3}; // dark on white
 static const struct TextColor sSynthSelected  = {2, 1, 3}; // inverted row
 static const u16 sSynthBackdrop[] = {RGB(3, 11, 11)};      // dark teal
 
-//Diagnostic backdrop colors (QA can report which color the screen shows):
-static const u16 sDiagRed[]    = {RGB(28, 4, 4)};   // InitWindows failed beyond probes
-static const u16 sDiagYellow[] = {RGB(28, 26, 4)};  // windows ok, draw crashed?
-static const u16 sDiagPurple[] = {RGB(20, 4, 28)};  // GetBgAttribute says BG0 invalid
-static const u16 sDiagOrange[] = {RGB(28, 16, 2)};  // tilemap-size Alloc returned NULL
-static const u16 sDiagPink[]   = {RGB(28, 14, 22)}; // window-tile Alloc returned NULL
+static const u16 sDiagRed[] = {RGB(28, 4, 4)}; //diagnostic backdrop: InitWindows failed
 #define sWindowsOk (gSynthMenuState->windowsOk)
 
 static const u8* const sSynthStatNames[6] =
@@ -117,30 +116,10 @@ static const u8* const sSynthStatNames[6] =
 
 // --- Drawing ----------------------------------------------------------------
 
-#define sVanillaWindows ((struct Window*) 0x020204B4) //gWindows; decomp-verified address
-
 static void CommitSynthWindow(u8 windowId)
 {
-	//Direct CPU blit. The DMA-queued CopyWindowToVram path never lands in
-	//this screen's context (unresolved engine quirk — see handoff doc);
-	//CPU writes to VRAM are proven to display. bg0: charBase 0, mapBase 31.
-	struct Window* w = &sVanillaWindows[windowId];
-	u32 tileCount = (u32) w->window.width * w->window.height;
-	vu16* tileDst = (vu16*) (VRAM + (u32) w->window.baseBlock * 32);
-	u16* tileSrc = (u16*) w->tileData;
-	vu16* map = (vu16*) (VRAM + 0xF800);
-
-	for (u32 i = 0; i < tileCount * 16; ++i) //32 bytes per tile = 16 u16s
-		tileDst[i] = tileSrc[i];
-
-	for (u32 y = 0; y < w->window.height; ++y)
-	{
-		for (u32 x = 0; x < w->window.width; ++x)
-		{
-			map[(w->window.tilemapTop + y) * 32 + w->window.tilemapLeft + x] =
-				(w->window.baseBlock + y * w->window.width + x) | (15 << 12);
-		}
-	}
+	PutWindowTilemap(windowId);
+	CopyWindowToVram(windowId, COPYWIN_BOTH);
 }
 
 static void DrawSynthTitle(void)
@@ -277,15 +256,24 @@ static void VBlankCB_SynthMenu(void)
 	TransferPlttBuffer();
 }
 
-static void SynthClearVramOamPlttRegs(void)
+static void SynthClearVramOamPlttRegs(void) //verbatim dexnav.c ClearVramOamPlttRegs
 {
 	DmaFill16(3, 0, VRAM, VRAM_SIZE);
 	DmaFill32(3, 0, OAM, OAM_SIZE);
 	DmaFill16(3, 0, PLTT, PLTT_SIZE);
 	SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_OBJ_ON | DISPCNT_OBJ_1D_MAP);
+	SetGpuReg(REG_OFFSET_BG3CNT, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG2CNT, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG1CNT, DISPCNT_MODE_0);
 	SetGpuReg(REG_OFFSET_BG0CNT, DISPCNT_MODE_0);
-	SetGpuReg(REG_OFFSET_BG0HOFS, 0);
-	SetGpuReg(REG_OFFSET_BG0VOFS, 0);
+	SetGpuReg(REG_OFFSET_BG3HOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG3VOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG2HOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG2VOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG1HOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG1VOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG0HOFS, DISPCNT_MODE_0);
+	SetGpuReg(REG_OFFSET_BG0VOFS, DISPCNT_MODE_0);
 }
 
 static void SynthClearTasksAndGraphicalStructs(void)
@@ -298,6 +286,14 @@ static void SynthClearTasksAndGraphicalStructs(void)
 	FreeAllSpritePalettes();
 }
 
+static void Task_SynthMenuFadeIn(u8 taskId)
+{
+	if (!gPaletteFade->active)
+		gTasks[taskId].func = Task_SynthMenuInput;
+}
+
+//State machine is a verbatim clone of CB2_DexNav (the known-good custom screen
+//in this build) — keep the state order in lockstep with dexnav.c when editing.
 void CB2_SynthMenu(void)
 {
 	switch (gMain.state) {
@@ -312,22 +308,31 @@ void CB2_SynthMenu(void)
 			gMain.state++;
 			break;
 		case 2:
+			gSynthMenuState->tilemapPtr = Calloc(0x1000);
 			ResetBgsAndClearDma3BusyFlags(0);
-			InitBgsFromTemplates(0, sSynthBgTemplates, 1); //bg0 only — last config InitWindows accepted
-			ChangeBgX(0, 0, 0);
-			ChangeBgY(0, 0, 0);
+			InitBgsFromTemplates(0, sSynthBgTemplates, NELEMS(sSynthBgTemplates));
+			SetBgTilemapBuffer(SBG_BACKGROUND, gSynthMenuState->tilemapPtr);
 			gMain.state++;
 			break;
 		case 3:
+			//No bg art yet (DexNav decompresses tiles+map here): zeroed VRAM +
+			//zeroed tilemap = tile 0 transparent, so the backdrop color shows.
 			LoadPalette(sSynthBackdrop, 0, 2);
 			Menu_LoadStdPalAt(15 * 0x10);
 			gMain.state++;
 			break;
 		case 4:
-			ShowBg(SBG_TEXTBOX);
-			gMain.state++;
+			if (!free_temp_tile_data_buffers_if_possible())
+			{
+				ShowBg(SBG_TEXT);
+				ShowBg(SBG_TEXT_2);
+				ShowBg(SBG_BACKGROUND);
+				CopyBgTilemapBufferToVram(SBG_BACKGROUND);
+				gMain.state++;
+			}
 			break;
 		case 5:
+			Free(gSynthMenuState->tilemapPtr);
 			sWindowsOk = InitWindows(sSynthWinTemplates);
 			DeactivateAllTextPrinters();
 			if (!sWindowsOk)
@@ -335,6 +340,7 @@ void CB2_SynthMenu(void)
 			gMain.state++;
 			break;
 		case 6:
+			BeginNormalPaletteFade(0xFFFFFFFF, 0, 16, 0, RGB_BLACK);
 			gMain.state++;
 			break;
 		case 7:
@@ -345,7 +351,7 @@ void CB2_SynthMenu(void)
 				DrawSynthStats();
 				DrawSynthHelp();
 			}
-			CreateTask(Task_SynthMenuInput, 0);
+			CreateTask(Task_SynthMenuFadeIn, 0);
 			SetMainCallback2(MainCB2_SynthMenu);
 			gMain.state = 0;
 			break;
