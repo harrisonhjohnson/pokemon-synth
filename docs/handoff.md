@@ -42,7 +42,7 @@ cp test.gba ../synth-base.gba
 | Starter | All 3 lab balls + `sStarterSpecies` (0x3F5D2C) give SYNTH — patched via CFRU `bytereplacement` |
 | Base stats | Placeholder: 300 BST flat 50s, Normal-type, ability **Trace** (per spec), genderless, no-breed. Runtime override engine comes later |
 | Learnset | Scratch/Growl @1, Quick Atk @7, Bite @12, Slash @18, Crunch @25; SYNTH2 shares it |
-| Evolution | SYNTH → SYNTH2 at Lv16, cannot be cancelled not yet enforced (spec rule #4 — TODO) |
+| Evolution | SYNTH → SYNTH2 at Lv16; cannot-be-cancelled ENFORCED 2026-08-18 (spec rule #4, `SynthUncancellableEvoHook`; byte-verified, in-game QA pending) |
 | Cry | Borrowed (Grookey's) — placeholder |
 | Icon | Placeholder; shared-palette mapping means colors may render off |
 
@@ -74,6 +74,8 @@ recoverable from the on-disk artifacts; the argument above is from the ROM, whic
 8. **Icons are 32×64** (two stacked 32×32 animation frames), 4bpp uncompressed, and use one of 3 **shared** palettes (`gMonIconPaletteIndices`) — the PNG's own palette is ignored at runtime. **A new icon MUST be authored in the shared palette's exact index layout** or it renders as rainbow garbage in the party menu (QA run 1 finding). Protocol: take a donor icon PNG with the same palette index (Squirtle=pal 0, Grookey=pal 1), nearest-map every color to the donor's 16 slots (never slot 0 = transparent), save with the donor's palette verbatim. Done for SYNTH (pal 0) + SYNTH2 (pal 1), 2026-07-21.
 9. **Back-sprite PNG doubles as the shiny palette source** (`gBackShinySprite*` = back tiles + shiny palette). Front PNG's palette = normal palette. They must share index layout.
 10. **`scripts/tm_tutor.py` hardcodes `SPECIES_COUNT`** — does not read `NUM_SPECIES`; bump manually when adding species (done: now `0x50F + 1`).
+11. **`ldr rX, =<small constant>` in CFRU hook asm can silently emit Thumb-2 `movw`** — invalid on the GBA's ARM7TDMI (executes as a stray BL-prefix + random store). devkitARM gas isn't pinned to armv4t in this build; the `ldr=` pseudo only uses a literal pool when the constant *can't* be a `movw` immediate (which is why every `=0x8xxxxxx | 1` address in the tree assembles fine and a small constant like `=0x50F` doesn't). Build small constants with `mov`/`lsl`/`add` instead, and byte-verify any new routine's encoding in the output ROM (caught 2026-08-18, N-04, SynthUncancellableEvoHook).
+12. **Adding ANY code to CFRU shifts the whole inserted blob** — expect a ~1MB diff at/above 0x900000 plus ~1KB of ≤4-byte pointer-word fixups at vanilla hook sites. That is NOT Gotcha-1 carpet-bombing. To tell them apart: revert the change, `mv generatedrepoints` away, rebuild — a byte-identical ROM proves the chain is deterministic and the big diff is legit relink shift (control-run technique, N-04 2026-08-18).
 
 ## Toolchain facts
 
@@ -127,7 +129,16 @@ QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname — **now proven a
 4. 18-type starter picker in Oak's lab script (CFRU scrolling multichoice).
 5. Synth menu (3-tab editor per `specs/synth_menu.md`).
 6. Rival fight 1 with fixed-budget Synth.
-7. Uncancellable evolution enforcement (spec decision #21). **Scoped 2026-08-17 — not implemented.**
+7. ~~Uncancellable evolution enforcement (spec decision #21)~~ — **DONE 2026-08-18 (N-04, unattended).**
+   Implemented as scoped below, but via a CFRU hook rather than a bytereplacement: `SynthUncancellableEvoHook`
+   (`CFRU/assembly/hooks/general_hooks.s` tail + `hooks` entry `08015AE4 0`) intercepts `TryEvolvePokemon`'s
+   argument setup for `EvolutionScene(mon, species, 0x81, i)` (call site found at `0x08015AEE` by ROM scan —
+   statics aren't in pokefirered.map) and passes `0x80` (bit 0 = TASK_BIT_CAN_STOP cleared) when
+   postEvoSpecies == SPECIES_SYNTH2, `0x81` otherwise. Battle level-up path only — the Rare Candy path
+   (`CFRU/src/party_menu.c:1789`) already passes `canStopEvo=FALSE`, and no stone evolves SYNTH.
+   Byte-verified in output ROM incl. full routine disassembly. **See new Gotchas 11 and 12** — both were hit
+   implementing this. In-game B-button QA still pending (needs a Lv15→16 SYNTH; Harrison's step).
+   Original scoping note kept below for reference. Scoped 2026-08-17:
    The cancel gate is NOT the B-button test itself. `pokefirered/src/evolution_scene.c:653` reads
    `gMain.heldKeys == B_BUTTON && ... && gTasks[taskId].tBits & TASK_BIT_CAN_STOP` — so cancellation is
    already opt-in per invocation via `TASK_BIT_CAN_STOP` (`1 << 0`, L169). **Do not patch the B-button

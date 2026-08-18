@@ -1570,3 +1570,24 @@ AutoScrollBattleLevelUpBoxHook2:
 	beq AutoScrollBattleLevelUpBoxHook_ReturnNo
 	ldr r0, =0x8026358 | 1
 	bx r0
+
+.pool
+@0x8015AE4 with r0 - TryEvolvePokemon's EvolutionScene call (battle level-up path)
+@SYNTH spec rule #4: the SYNTH -> SYNTH2 evolution cannot be cancelled
+SynthUncancellableEvoHook:
+	mov r1, r2 @postEvoSpecies
+	mov r2, #0x81 @vanilla arg: TASK_BIT_CAN_STOP | TASK_BIT_LEARN_MOVE
+	mov r0, #0x50 @build SPECIES_SYNTH2 (0x50F) without ldr= (gas emits Thumb-2 movw for it - invalid on ARM7TDMI)
+	lsl r0, r0, #4
+	add r0, #0xF
+	cmp r1, r0
+	bne SynthUncancellableEvoHook_SetArgs
+	mov r2, #0x80 @SYNTH2: clear TASK_BIT_CAN_STOP
+SynthUncancellableEvoHook_SetArgs:
+	lsl r3, r5, #0x18
+	lsr r3, r3, #0x18 @partyId
+	mov r0, r4 @mon
+	ldr r4, =0x8015AEE | 1
+	bx r4 @resume at the bl EvolutionScene
+
+.pool
