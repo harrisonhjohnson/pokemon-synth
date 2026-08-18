@@ -46,7 +46,20 @@ cp test.gba ../synth-base.gba
 | Cry | Borrowed (Grookey's) — placeholder |
 | Icon | Placeholder; shared-palette mapping means colors may render off |
 
-**Open verification item:** player's Synth showed nameplate "Mon" — confirm whether that was a user-entered nickname or a species-name table bug (summary screen should say SYNTH).
+**Open verification item — CLOSED 2026-08-17 (byte-level, no code change needed).** Player's Synth
+showed nameplate "Mon". **Verdict: user-entered nickname. The species-name table is correct.** Proof:
+`gSpeciesNames` is repointed to `0x0965C268` (pointer stored at ROM `0x144`), file offset `0x165C268`,
+stride 11 (`POKEMON_NAME_LENGTH + 1`). Entry `0x50E` = `cd ed e2 e8 dc ff` = "Synth", entry `0x50F` =
+`cd ed e2 e8 dc a3 ff` = "Synth2". Anchors confirm indexing end-to-end: idx 0 = "??????",
+idx 1 = "Bulbasaur", idx `0x509`–`0x50D` = Alcremie/Copperajah/Duraludon/Urshifu/Urshifu — matching
+`strings/Pokemon_Name_Table.string`'s tail entry-for-entry. **Decisive:** across all 1296 entries no
+entry equals "Mon"; the only "Mon*" entry is `0x1BC` "Monferno". A misindexed table read still yields a
+complete terminated entry, so no indexing error can produce "Mon" — it had to be typed. (Nicknames are
+stamped into `BoxPokemon` at creation and the nameplate reads the *stored* nickname, so a table bug at
+creation time was the real competing hypothesis; it is ruled out by the above.)
+Reproduce with `docs/name_table_scan.py` (see its docstring).
+Note: `synth-base.sav` is 131072 bytes of `0xFF` — a blank save. The original "Mon" mon is not
+recoverable from the on-disk artifacts; the argument above is from the ROM, which is stronger anyway.
 
 ## Gotchas (each cost real time — do not relearn)
 
@@ -87,7 +100,7 @@ Skill: **`/synth-build`** — full chain build + verification + mGBA launch (+ o
 2. A battle works ← passing as of session 1
 3. Menu pieces functional: stat editor / type selector / ability selector ← **not built yet**; build order: SynthData+save block → menu shell from party screen → stat editor → type selector → ability selector
 
-QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname), battle ✅, icon anim ✅ (art fixed via shared-palette remap).
+QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname — **now proven at byte level, 2026-08-17**; see the closed verification item above), battle ✅, icon anim ✅ (art fixed via shared-palette remap).
 
 **Slice session 2 (2026-07-21): Synth Menu MVP shipped.**
 - `CFRU/include/new/synth.h` + `src/synth_core.c`: SynthData (40B×6), personality-keyed, lazy-allocated on first menu open; SynthValidateStats with clamp + overspend clawback.
@@ -114,7 +127,17 @@ QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname), battle ✅, icon
 4. 18-type starter picker in Oak's lab script (CFRU scrolling multichoice).
 5. Synth menu (3-tab editor per `specs/synth_menu.md`).
 6. Rival fight 1 with fixed-budget Synth.
-7. Uncancellable evolution enforcement (spec decision #21).
+7. Uncancellable evolution enforcement (spec decision #21). **Scoped 2026-08-17 — not implemented.**
+   The cancel gate is NOT the B-button test itself. `pokefirered/src/evolution_scene.c:653` reads
+   `gMain.heldKeys == B_BUTTON && ... && gTasks[taskId].tBits & TASK_BIT_CAN_STOP` — so cancellation is
+   already opt-in per invocation via `TASK_BIT_CAN_STOP` (`1 << 0`, L169). **Do not patch the B-button
+   check** — that is global and would make every evolution in the game uncancellable. Patch the caller
+   instead: the post-battle level-up path is `pokefirered/src/battle_main.c:3900`,
+   `EvolutionScene(&gPlayerParty[i], species, 0x81, i)` — `0x81` has bit 0 set (= can stop). Clearing
+   bit 0 *when the mon's species is SYNTH* is the species-scoped fix rule #4 wants. (Other callers, for
+   reference: `party_menu.c:5175` passes TRUE — the item/evo-stone path; `pokemon.c:4409` passes FALSE.)
+   Confirm whether CFRU overrides this call site before patching; if not, it needs a `bytereplacement`
+   patch — and per Gotcha 2 it must go **above** the unclosed `#ifdef UNBOUND`, not at the file tail.
 
 ## QA bug log
 
