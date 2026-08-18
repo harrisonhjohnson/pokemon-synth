@@ -358,10 +358,10 @@ void atk4D_switchindataupdate(void)
 	{
 		UpdateTypesForCamomons(gActiveBattler);
 	}
-	else
+	else //Through GetMonType so Synth's player-chosen types survive switch-in
 	{
-		gBattleMons[gActiveBattler].type1 = gBaseStats[gBattleMons[gActiveBattler].species].type1;
-		gBattleMons[gActiveBattler].type2 = gBaseStats[gBattleMons[gActiveBattler].species].type2;
+		gBattleMons[gActiveBattler].type1 = GetMonType(GetBankPartyData(gActiveBattler), 0);
+		gBattleMons[gActiveBattler].type2 = GetMonType(GetBankPartyData(gActiveBattler), 1);
 	}
 
 	gBattleMons[gActiveBattler].ability = GetMonAbility(GetBankPartyData(gActiveBattler));

@@ -7,6 +7,7 @@
 #include "../include/new/evolution.h"
 #include "../include/new/frontier.h"
 #include "../include/new/mega.h"
+#include "../include/new/synth.h"
 #include "../include/new/util.h"
 
 /*
@@ -363,10 +364,11 @@ u8 GetMonType(struct Pokemon* mon, u8 typeId)
 {
 	u16 species = GetMonData(mon, MON_DATA_SPECIES, NULL);
 
+	//Camomons replaces types by design and takes precedence over Synth's player-chosen types
 	if (typeId == 0)
-		return (ShouldReplaceTypesWithCamomons()) ? GetCamomonsTypeByMon(mon, 0) : gBaseStats[species].type1;
+		return (ShouldReplaceTypesWithCamomons()) ? GetCamomonsTypeByMon(mon, 0) : SynthGetType(mon, 0, gBaseStats[species].type1);
 	else
-		return (ShouldReplaceTypesWithCamomons()) ? GetCamomonsTypeByMon(mon, 1) : gBaseStats[species].type2;
+		return (ShouldReplaceTypesWithCamomons()) ? GetCamomonsTypeByMon(mon, 1) : SynthGetType(mon, 1, gBaseStats[species].type2);
 }
 
 bool8 IsMonOfType(struct Pokemon* mon, u8 type)

@@ -1,6 +1,6 @@
 # Pokémon SYNTH — Engineering Log & Handoff
 
-**Last updated:** 2026-07-21 (slice session 1)
+**Last updated:** 2026-08-18 (N-05 night run — type overrides wired)
 **Workspace:** `~/ventures/005-pokemon-synth/`
 **Design bible:** `~/Downloads/Pokemon Synth/Claude/` (9 spec files — `claude.md` there is the project guide)
 **Playable ROM:** `~/ventures/005-pokemon-synth/synth-base.gba` (open in mGBA)
@@ -40,7 +40,7 @@ cp test.gba ../synth-base.gba
 | SPECIES_SYNTH2 (0x50F, dex #907, idx 1261) | ✅ registered; untested in-game (evolution at Lv16) |
 | Sprites | PixelLab teal dino = SYNTH, mane-fox = SYNTH2; 64×64 4bpp, shared 15-color palette; shinies are hue-shifts (purple). Sources: `~/Downloads/Pokemon Synth/Art/Pixel Lab Sprites/` |
 | Starter | All 3 lab balls + `sStarterSpecies` (0x3F5D2C) give SYNTH — patched via CFRU `bytereplacement` |
-| Base stats | Placeholder: 300 BST flat 50s, Normal-type, ability **Trace** (per spec), genderless, no-breed. Runtime override engine comes later |
+| Base stats | Placeholder: 300 BST flat 50s, Normal-type, ability **Trace** (per spec), genderless, no-breed. Runtime override engines WIRED: stats 2026-08-12, types 2026-08-18 (see sections below); ability override still unwired |
 | Learnset | Scratch/Growl @1, Quick Atk @7, Bite @12, Slash @18, Crunch @25; SYNTH2 shares it |
 | Evolution | SYNTH → SYNTH2 at Lv16; cannot-be-cancelled ENFORCED 2026-08-18 (spec rule #4, `SynthUncancellableEvoHook`; byte-verified, in-game QA pending) |
 | Cry | Borrowed (Grookey's) — placeholder |
@@ -119,13 +119,63 @@ QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname — **now proven a
 - **Deliberately NOT wired** into the Scalemons / AverageMons / 350 Cup branches — those formats normalize base stats on purpose.
 - **`SynthGetBaseStat` had a latent index bug, fixed the same session.** `SynthData->baseStats` is authored in MENU order `[HP,Atk,Def,SpA,SpD,Spe]`; the engine indexes in CANONICAL order `[HP,Atk,Def,Spe,SpA,SpD]` (the `STAT_*` enum and `struct BaseStats` field layout both). They agree on 0-2 and disagree on 3-5, and the function indexed straight through — so wiring it as-written would have fed the Speed slot into Sp. Atk. Fixed with `sStatIndexToSynthSlot[6] = {0,1,2,5,3,4}` in synth_core.c; callers pass a natural `STAT_*` index. **Never "fix" this by reordering `SynthData->baseStats`** — that array is persisted in the save block, so reordering silently corrupts every existing Synth mon.
 
+## Type overrides — WIRED 2026-08-18 (N-05, unattended)
+
+`SynthGetType` was written in slice session 2 and left with **zero callers.** Now wired, using
+Camomons as the template (it is the one existing feature that replaces types per-mon at runtime):
+
+- **The narrow waist for mon-based reads is `GetMonType(mon, typeId)` (`src/util.c`)** — the exact
+  function Camomons already overrides. Damage calc, battle scripts, type indicators, and the Illusion
+  paths all flow through it. Synth slots into its fallback arm:
+  `Camomons active ? GetCamomonsTypeByMon(...) : SynthGetType(mon, slot, gBaseStats fallback)`.
+  Camomons keeps precedence — it is a format that replaces types **by design** (same exclusion logic
+  as Scalemons/350 Cup in the stat session).
+- **But `gBattleMons[bank].type1/type2` are STAMPED, not read through the waist.** Vanilla
+  `PokemonToBattleMon` copies gBaseStats types when a battler is loaded, and CFRU re-stamps at three
+  sites. Camomons solves this with explicit `UpdateTypesForCamomons(bank)` calls at those exact
+  sites; Synth now rides the same three seams:
+  1. `battle_start_turn_start.c` (`BattleBeginFirstTurn`, `BTSTART_THIRD_TYPE_REMOVAL` loop) — new
+     `else if (IsSynthMon(GetBankPartyData(*bank)))` branch re-stamps both types via GetMonType.
+     Covers battle start for all banks. Guarded by IsSynthMon so it is a strict no-op for every
+     non-Synth battle (Camomons deliberately skips ghost-battle opponents here; the guard keeps us
+     out of that corner entirely).
+  2. `switching.c` (`atk4D_switchindataupdate`) — the non-Camomons else-branch now reads
+     `GetMonType(GetBankPartyData(gActiveBattler), N)` instead of raw gBaseStats. Covers switch-in.
+  3. `form_change.c` (`DoFormChange`, ReloadType else-branch) — `GetMonType(mon, N)`; `mon` already
+     carries the new form species at that point (SetMonData above), so behavior-identical for
+     non-Synth forms while keeping Synth types if a Synth ever form-changes.
+- **Deliberately NOT wired** (document-every-exclusion rule):
+  - **Camomons paths themselves** (`UpdateTypesForCamomons`, `GetCamomonsTypeByMon/BySpread`) — the
+    format overrides types on purpose; Synth yields to it everywhere.
+  - `Battle_AI/ai_master.c` mega-simulation type stamp (~L299) — AI prediction, out of scope per
+    the N-05 order; Synth species cannot mega evolve.
+  - `build_pokemon.c` spread/species sites (~L2557/2576/2964/3104) — battle-facility **enemy team
+    generation** from BattleTowerSpreads; a Synth mon never originates from a spread.
+  - `damage_calc.c` ~L1225 `fakeSpecies` — Illusion disguise types; reading the fake species there
+    is the point.
+  - `IsSpeciesOfType` (util.c) and the ~100 other species-keyed readers (dex/dexnav display,
+    item/scripting checks, exp/catch) — the known "refinements, not blockers" set.
+- Verification (house standard, set by N-04): header `POKEMON FIRE` ✅ · control rebuild with edits
+  stashed = **byte-identical to the N-04 ROM** (chain deterministic; diff fully attributable) ✅ ·
+  re-applied rebuild byte-identical to the first N-05 build ✅ · diff vs N-04 ROM = 853,170 bytes,
+  1,062 of them below 0x900000 in 572 small pointer-fixup clusters — the Gotcha-12 relink-shift
+  signature, nothing anomalous ✅ · BL-decode disassembly of the output ROM shows
+  `GetMonType→SynthGetType` (0x08954C44) plus the new GetMonType/IsSynthMon calls in
+  `atk4D_switchindataupdate`, `DoFormChange`, and `BattleBeginFirstTurn` ✅. In-game QA (pick types
+  in menu → see them in battle) still pending — Harrison's step.
+
+**GOTCHA (same stamping class as stats/moves): battler types refresh only at battle start,
+switch-in, and form change.** The party-menu type picker (not built yet) edits SynthData outside
+battle, so today's paths are covered; any future feature that mutates SynthData types **mid-battle**
+must re-stamp `gBattleMons[bank].type1/type2` itself.
+
 **GOTCHA (same class as "moves are stamped at mon creation"): stats only recompute when `CalculateMonStatsNew` runs** — level-up, evolution, a few build paths. Editing sliders alone leaves the summary screen showing pre-edit numbers, which reads exactly like a broken hook. `Task_SynthMenuInput`'s B-exit now calls `CalculateMonStatsNew(sSynthMenuMon)` before clearing the pointer. Any future path that mutates SynthData must do the same.
 
 ## Next sessions (vertical slice order)
 
 1. ~~**Audit dual-ownership tables**~~ — done 2026-07-21 (see Gotcha 3a).
 2. ~~**SynthData struct + save block**~~ — done slice session 2.
-3. ~~Stat override hooks~~ — done 2026-08-12 (above). **Type overrides still unwired**: `SynthGetType` has zero callers; the read sites are `gBaseStats[species].type1/type2` (~L2575 build_pokemon.c, damage_calc.c, and the Camomons paths, which are the closest existing analogue to what Synth needs).
+3. ~~Stat override hooks~~ — done 2026-08-12 (above). ~~Type overrides~~ — **done 2026-08-18 (N-05, unattended; see "Type overrides — WIRED" above).**
 4. 18-type starter picker in Oak's lab script (CFRU scrolling multichoice).
 5. Synth menu (3-tab editor per `specs/synth_menu.md`).
 6. Rival fight 1 with fixed-budget Synth.

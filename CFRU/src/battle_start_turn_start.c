@@ -33,6 +33,7 @@
 #include "../include/new/move_battle_scripts.h"
 #include "../include/new/move_tables.h"
 #include "../include/new/set_z_effect.h"
+#include "../include/new/synth.h"
 #include "../include/new/util.h"
 
 /*
@@ -339,6 +340,13 @@ void BattleBeginFirstTurn(void)
 						PREPARE_TYPE_BUFFER(gBattleTextBuff2, type2);
 						++*bank;
 						return;
+					}
+					else if (IsSynthMon(GetBankPartyData(*bank)))
+					{
+						//Vanilla PokemonToBattleMon stamped gBaseStats types before this
+						//loop; re-stamp through GetMonType so player-chosen types apply
+						gBattleMons[*bank].type1 = GetMonType(GetBankPartyData(*bank), 0);
+						gBattleMons[*bank].type2 = GetMonType(GetBankPartyData(*bank), 1);
 					}
 				}
 

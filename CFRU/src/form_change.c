@@ -91,10 +91,10 @@ void DoFormChange(u8 bank, u16 species, bool8 ReloadType, bool8 ReloadStats, boo
 	{
 		if (gBattleTypeFlags & BATTLE_TYPE_CAMOMONS) //The Pokemon takes on the types of its first two moves
 			UpdateTypesForCamomons(bank);
-		else
+		else //mon already carries the new form species here; GetMonType keeps Synth overrides
 		{
-			gBattleMons[bank].type1 = gBaseStats[species].type1;
-			gBattleMons[bank].type2 = gBaseStats[species].type2;
+			gBattleMons[bank].type1 = GetMonType(mon, 0);
+			gBattleMons[bank].type2 = GetMonType(mon, 1);
 		}
 
 		gBattleMons[bank].type3 = TYPE_BLANK;
