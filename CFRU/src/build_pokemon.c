@@ -38,6 +38,7 @@
 #include "../include/new/pokemon_storage_system.h"
 #include "../include/new/species_tables.h"
 #include "../include/new/util.h"
+#include "../include/new/synth.h"
 
 #include "Tables/battle_tower_spreads.h"
 #include "Tables/raid_encounters.h"
@@ -4456,7 +4457,9 @@ void CalculateMonStatsNew(struct Pokemon *mon)
 	}
 	else
 	{
-		baseHP = gBaseStats[species].baseHP;
+		//SYNTH: player-allocated base stats override the species table.
+		//No-ops (returns the vanilla value) for every non-Synth mon.
+		baseHP = SynthGetBaseStat(mon, STAT_HP, gBaseStats[species].baseHP);
 
 		if (Is350CupBattle() && baseStatTotal <= 350)
 			baseHP *= 2;
@@ -4512,7 +4515,11 @@ void CalculateMonStatsNew(struct Pokemon *mon)
 	{
 		for (i = STAT_ATK; i < NUM_STATS; ++i)
 		{
-			u16 base = ((u8*) (&gBaseStats[species].baseHP))[i];
+			//SYNTH: player-allocated base stats override the species table.
+			//No-ops (returns the vanilla value) for every non-Synth mon.
+			//Deliberately NOT applied in the Scalemons/AverageMons/350 Cup
+			//branches above — those formats normalize base stats on purpose.
+			u16 base = SynthGetBaseStat(mon, i, ((u8*) (&gBaseStats[species].baseHP))[i]);
 			CALC_STAT(base, ivs[i], evs[i], i, MON_DATA_ATK + (i - 1));
 		}
 	}

@@ -17,6 +17,7 @@
 #include "../include/window.h"
 #include "../include/constants/songs.h"
 
+#include "../include/new/build_pokemon.h" //CalculateMonStatsNew decl
 #include "../include/new/dns.h" //TransferPlttBuffer decl
 #include "../include/new/synth.h"
 
@@ -200,6 +201,14 @@ static void Task_SynthMenuInput(u8 taskId)
 		DestroyTask(taskId);
 		if (sWindowsOk)
 			FreeAllWindowBuffers();
+
+		//SYNTH: stats are only recomputed when CalculateMonStatsNew runs (level-up,
+		//evolution, a few build paths). Without this call the edits sit in SynthData
+		//and the summary screen keeps showing the pre-edit numbers until the mon
+		//happens to level — which reads exactly like "the override hook is broken".
+		if (sSynthMenuMon != NULL)
+			CalculateMonStatsNew(sSynthMenuMon);
+
 		sSynthMenuMon = NULL;
 		sSynthMenuData = NULL;
 		SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
@@ -386,21 +395,4 @@ bool8 SynthMenuPrepare(struct Pokemon* mon)
 	sSynthMenuData = data;
 	sSelectedStat = 0;
 	return TRUE;
-}
-
-// --- DEBUG: boot directly into the menu with dummy data (hooks file entry
-// CB2_SynthMenuBootDebug replaces the copyright screen). REMOVE BEFORE RELEASE.
-void CB2_SynthMenuBootDebug(void)
-{
-	struct SynthData* dbg = ((struct SynthData*) 0x203D8DC) + 5; //slot 5 as debug scratch
-	dbg->statBudget = 300;
-	dbg->resonancePoints = 0;
-	dbg->statCapPerStat = 80;
-	dbg->postGameUnlocked = FALSE;
-	for (u32 i = 0; i < 6; ++i)
-		dbg->baseStats[i] = 50;
-	sSynthMenuData = dbg;
-	sSelectedStat = 0;
-	gMain.state = 0;
-	SetMainCallback2(CB2_SynthMenu);
 }

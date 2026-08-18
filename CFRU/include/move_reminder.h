@@ -70,7 +70,9 @@ const struct ListMenuTemplate sMoveRelearnerMovesListTemplate =
 };
 */
 
-const struct WindowTemplate sMoveRelearnerWindowTemplates[] =
+//aligned(4): InitWindows copies templates with 32-bit loads and ARM7TDMI rotates
+//unaligned LDRs — a 2-aligned array scrambles every field. See docs/handoff.md.
+const struct WindowTemplate sMoveRelearnerWindowTemplates[] __attribute__((aligned(4))) =
 {
     {
         .bg = 0,

@@ -21,7 +21,9 @@ enum
 	WINDOW_BOTTOM_MSG,
 };
 
-const struct WindowTemplate sMoveRelearnerExpandedTemplates[] =
+//aligned(4): InitWindows copies templates with 32-bit loads and ARM7TDMI rotates
+//unaligned LDRs — a 2-aligned array scrambles every field. See docs/handoff.md.
+const struct WindowTemplate sMoveRelearnerExpandedTemplates[] __attribute__((aligned(4))) =
 {
 	[WINDOW_TYPE_PP_SYMBOLS] =
     {

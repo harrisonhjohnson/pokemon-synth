@@ -1,9 +1,9 @@
 # Pokémon SYNTH — Engineering Log & Handoff
 
 **Last updated:** 2026-07-21 (slice session 1)
-**Workspace:** `~/projects/pokemon-synth/`
+**Workspace:** `~/ventures/005-pokemon-synth/`
 **Design bible:** `~/Downloads/Pokemon Synth/Claude/` (9 spec files — `claude.md` there is the project guide)
-**Playable ROM:** `~/projects/pokemon-synth/synth-base.gba` (open in mGBA)
+**Playable ROM:** `~/ventures/005-pokemon-synth/synth-base.gba` (open in mGBA)
 
 ---
 
@@ -18,7 +18,7 @@
 ## Build protocol (memorize this)
 
 ```sh
-cd ~/projects/pokemon-synth && source env.sh   # devkitARM + tools + local bin on PATH
+cd ~/ventures/005-pokemon-synth && source env.sh   # devkitARM + tools + local bin on PATH
 
 # Order is DPE first, then CFRU on DPE's output:
 cd DPE  && rm -f generatedrepoints && python3 scripts/make.py          # BPRE0.gba -> test.gba
@@ -96,11 +96,21 @@ QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname), battle ✅, icon
 - **`src/synth_menu.c`:** fullscreen stat editor (DexNav-skeleton): d-pad row select, left/right adjust, live budget line (used/total), caps + budget enforced, B exits. MVP notes: exits to start menu (not back into party menu); edits SynthData only — **battle stats not yet overridden** (hooks are next); menu opened via replaced CB2 leaks party-menu heap allocs (benign short-term).
 - Audit fix shipped: gBaseExpBySpecies SYNTH entries.
 
+## Stat override engine — WIRED 2026-08-12
+
+`SynthGetBaseStat` was written in slice session 2 and left with **zero callers**. Now wired:
+
+- **The narrow waist is `CalculateMonStatsNew` (`src/build_pokemon.c`), not 109 call sites.** CFRU already hooks it over vanilla `CalculateMonStats` (`hooks:333` → `803E47C`), and every *displayed and battle* stat flows through it. Two wraps done there: `baseHP` (~L4459) and the normal per-stat loop (~L4518). The ~107 other `gBaseStats[]` reads are direct-base-stat consumers (AI damage prediction, exp yield, catch rate, dex display) — refinements, not blockers.
+- **Deliberately NOT wired** into the Scalemons / AverageMons / 350 Cup branches — those formats normalize base stats on purpose.
+- **`SynthGetBaseStat` had a latent index bug, fixed the same session.** `SynthData->baseStats` is authored in MENU order `[HP,Atk,Def,SpA,SpD,Spe]`; the engine indexes in CANONICAL order `[HP,Atk,Def,Spe,SpA,SpD]` (the `STAT_*` enum and `struct BaseStats` field layout both). They agree on 0-2 and disagree on 3-5, and the function indexed straight through — so wiring it as-written would have fed the Speed slot into Sp. Atk. Fixed with `sStatIndexToSynthSlot[6] = {0,1,2,5,3,4}` in synth_core.c; callers pass a natural `STAT_*` index. **Never "fix" this by reordering `SynthData->baseStats`** — that array is persisted in the save block, so reordering silently corrupts every existing Synth mon.
+
+**GOTCHA (same class as "moves are stamped at mon creation"): stats only recompute when `CalculateMonStatsNew` runs** — level-up, evolution, a few build paths. Editing sliders alone leaves the summary screen showing pre-edit numbers, which reads exactly like a broken hook. `Task_SynthMenuInput`'s B-exit now calls `CalculateMonStatsNew(sSynthMenuMon)` before clearing the pointer. Any future path that mutates SynthData must do the same.
+
 ## Next sessions (vertical slice order)
 
-1. **Audit dual-ownership tables** (CFRU config flags vs DPE data) — before any engine work.
-2. **SynthData struct + save block** — keyed to **personality value**, never party/box slot (identity decision, save-corruption risk).
-3. Stat/type override hooks (`IsSynthMon()`, `GetSynthBaseBudget()`) — find ALL gBaseStats read sites in CFRU source.
+1. ~~**Audit dual-ownership tables**~~ — done 2026-07-21 (see Gotcha 3a).
+2. ~~**SynthData struct + save block**~~ — done slice session 2.
+3. ~~Stat override hooks~~ — done 2026-08-12 (above). **Type overrides still unwired**: `SynthGetType` has zero callers; the read sites are `gBaseStats[species].type1/type2` (~L2575 build_pokemon.c, damage_calc.c, and the Camomons paths, which are the closest existing analogue to what Synth needs).
 4. 18-type starter picker in Oak's lab script (CFRU scrolling multichoice).
 5. Synth menu (3-tab editor per `specs/synth_menu.md`).
 6. Rival fight 1 with fixed-budget Synth.
@@ -110,6 +120,8 @@ QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname), battle ✅, icon
 
 - **Synth Menu black screen / crash (QA runs 2-3) — ROOT CAUSE FOUND via diagnostic-backdrop build:** `InitWindows` fails (red backdrop) when the Synth screen is launched directly from a `CursorCb` while the party menu is still alive — its heap allocations starve the window system, and (pre-guards) drawing through invalid windows corrupted memory → "Jumped to invalid address" on next input. **Fix: never `SetMainCallback2` from a party-menu cursor callback — use the official teardown: `sPartyMenuInternal->exitCallback = CB2_YourScreen; Task_ClosePartyMenu(taskId);`** (pattern from CursorCb_Summary). Diagnostic-backdrop technique worth reusing: backdrop palette writes work even when windows fail — use color as a status channel QA can report.
 - **Cosmetic, open:** party menu bottom-left message strip shows garbled glyphs when the action menu is open (see QA screenshot 2026-07-21) — possibly pre-existing CFRU quirk, possibly fallout from our menu string; check before/after removing MENU_SYNTH.
+- **DexNav ungate: DELIBERATELY RETAINED (2026-08-11, Harrison's call).** The two `//SYNTH QA` edits in `CFRU/src/start_menu.c` (~L149 `CanSetUpSecondaryStartMenu`, ~L226 `BuildPokeToolsMenu`) stay in for now as a **rendering canary** — DexNav is the known-good screen, so if it ever renders wrong, the window/VRAM pipeline broke tree-wide rather than in our screen. Still a release blocker: restore both flag checks (`FLAG_SYS_DEXNAV`, `FLAG_SYS_POKEDEX_GET`) before shipping.
+- **Removed 2026-08-11:** `CB2_SynthMenuBootDebug` deleted from `synth_menu.c`. Its hook was already unwired, so it was dead code, but it was the one line standing between the repo and a debug-boot release build. Re-add from git history (`6e66e5f`) if a boot-straight-to-menu loop is needed again.
 - **Process rule: never drive the game via OS keystroke automation (osascript System Events) while Harrison is using the machine** — keystrokes land in whatever window has focus (nearly disrupted an unrelated terminal session). Future self-serve driving: mGBA's Lua scripting (GUI Tools menu — injects into the emu core, no OS focus) or the GDB stub. Until then, in-game verification is Harrison's step.
 
 ## Synth Menu rendering bug — RESOLVED 2026-08-04 ✅
@@ -118,7 +130,11 @@ QA run 1 result: species name SYNTH ✅ ("Mon" was a nickname), battle ✅, icon
 
 **Fix:** `__attribute__((aligned(4)))` on `sSynthWinTemplates` (synth_menu.c). **RULE: every `struct WindowTemplate` array in CFRU src MUST carry `__attribute__((aligned(4)))`.** Verify after build: `arm-none-eabi-nm build/linked.o | grep WinTemplates` — address must end in 0/4/8/C.
 
+**RULE NOW ENFORCED TREE-WIDE (2026-08-11).** The rule had only ever been applied to the file where the bug bit; an audit found five other `WindowTemplate` arrays with no attribute, all 4-aligned *by luck* at the time (any layout-shifting edit re-rolls that). Attribute added to all of them: `src/frontier_records.c` (`sFrontierRecordsWinTemplates`), `src/raid_intro.c` (`sRaidBattleIntroWinTemplates`), `include/new/dexnav_data.h` (`sDexNavWinTemplates`), `include/move_reminder.h` (`sMoveRelearnerWindowTemplates`), `include/new/move_reminder_data.h` (`sMoveRelearnerExpandedTemplates`). When adding any new screen, the attribute goes on at declaration time — do not rely on the nm check catching it.
+
 Verified rendering (debug-boot screenshot): title, budget line, six stat rows with selection highlight, help bar, teal backdrop. Menu shipped on the DexNav chassis (see divergence list above) — the chassis rewrite was likely not strictly necessary for the fix but is kept: it matches the known-good screen pattern.
+
+**REAL-PATH QA CONFIRMED (Harrison, pre-2026-08-11):** menu opens correctly on a real Synth mon via party menu → Synth. This is the route the debug-boot hook bypassed, so the party-menu teardown fix (`exitCallback` + `Task_ClosePartyMenu`) is proven too, not just the renderer. **Nothing beyond "it loads" has been exercised yet** — d-pad row select, left/right stat adjust, budget clamp/clawback, cap enforcement, and B-exit are all still untested. That is the next QA pass.
 
 Debug loop notes for next time: boot hook = `CB2_SynthMenuBootDebug 80EC820 0` in CFRU `hooks` (80EC820 = CB2_InitCopyrightScreenAfterBootup; REMOVE before release build — currently removed). mGBA GDB stub: `mGBA -g` + `arm-none-eabi-gdb -batch`; use **hbreak** (sw breaks in ROM don't stick), one fresh mGBA per gdb session (stub can't re-attach after detach). Useful fixed addrs: gWindows 0x020204B4, dma3 queue 0x030000C8 (locked/cursor 0x030008C8/C9), bg configs 0x030008D0.
 

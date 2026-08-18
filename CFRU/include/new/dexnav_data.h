@@ -219,7 +219,9 @@ enum
 	WINDOW_COUNT,
 };
 
-static const struct WindowTemplate sDexNavWinTemplates[WINDOW_COUNT + 1] =
+//aligned(4): InitWindows copies templates with 32-bit loads and ARM7TDMI rotates
+//unaligned LDRs — a 2-aligned array scrambles every field. See docs/handoff.md.
+static const struct WindowTemplate sDexNavWinTemplates[WINDOW_COUNT + 1] __attribute__((aligned(4))) =
 {
 	[WIN_TEXTBOX] =
 	{

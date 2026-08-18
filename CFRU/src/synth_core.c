@@ -188,14 +188,24 @@ bool8 SynthValidateStats(struct SynthData* data)
 	return wasValid;
 }
 
-// --- Engine override entry points (call sites wired in a later session) -----
+// --- Engine override entry points -------------------------------------------
+// Wired into CalculateMonStatsNew (build_pokemon.c) 2026-08-12.
+
+// SynthData->baseStats is authored in MENU DISPLAY order [HP,Atk,Def,SpA,SpD,Spe]
+// (see struct comment in synth.h and sStatNames in synth_menu.c). The engine
+// indexes stats in CANONICAL order [HP,Atk,Def,Spe,SpA,SpD] — matching both the
+// STAT_* enum and struct BaseStats' field layout. They agree on 0-2 and disagree
+// on 3-5, so callers pass a STAT_* index and this table maps it to the slot.
+// DO NOT reorder SynthData->baseStats to "fix" this — the array is persisted in
+// the save block, so reordering silently corrupts every existing Synth mon.
+static const u8 sStatIndexToSynthSlot[6] = {0, 1, 2, 5, 3, 4};
 
 u16 SynthGetBaseStat(struct Pokemon* mon, u8 statIndex, u16 vanillaValue)
 {
 	struct SynthData* data = GetSynthDataForMon(mon);
 	if (data == NULL || statIndex >= 6)
 		return vanillaValue;
-	return data->baseStats[statIndex];
+	return data->baseStats[sStatIndexToSynthSlot[statIndex]];
 }
 
 u8 SynthGetType(struct Pokemon* mon, u8 typeSlot, u8 vanillaType)
