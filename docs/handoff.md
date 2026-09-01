@@ -1,6 +1,6 @@
 # Pokémon SYNTH — Engineering Log & Handoff
 
-**Last updated:** 2026-08-18 (N-05 night run — type overrides wired)
+**Last updated:** 2026-08-31 (stat editor QA pass; canonical copy of this doc is now `docs/handoff.md` in-repo — the Desktop file under `Handoffs & Notes/` is a mirror)
 **Workspace:** `~/ventures/005-pokemon-synth/`
 **Design bible:** `~/Downloads/Pokemon Synth/Claude/` (9 spec files — `claude.md` there is the project guide)
 **Playable ROM:** `~/ventures/005-pokemon-synth/synth-base.gba` (open in mGBA)
@@ -218,7 +218,7 @@ must re-stamp `gBattleMons[bank].type1/type2` itself.
 
 Verified rendering (debug-boot screenshot): title, budget line, six stat rows with selection highlight, help bar, teal backdrop. Menu shipped on the DexNav chassis (see divergence list above) — the chassis rewrite was likely not strictly necessary for the fix but is kept: it matches the known-good screen pattern.
 
-**REAL-PATH QA CONFIRMED (Harrison, pre-2026-08-11):** menu opens correctly on a real Synth mon via party menu → Synth. This is the route the debug-boot hook bypassed, so the party-menu teardown fix (`exitCallback` + `Task_ClosePartyMenu`) is proven too, not just the renderer. **Nothing beyond "it loads" has been exercised yet** — d-pad row select, left/right stat adjust, budget clamp/clawback, cap enforcement, and B-exit are all still untested. That is the next QA pass.
+**REAL-PATH QA CONFIRMED (Harrison, pre-2026-08-11):** menu opens correctly on a real Synth mon via party menu → Synth. This is the route the debug-boot hook bypassed, so the party-menu teardown fix (`exitCallback` + `Task_ClosePartyMenu`) is proven too, not just the renderer. ~~Nothing beyond "it loads" has been exercised yet~~ **Stat editing CONFIRMED in-game (Harrison QA, 2026-08-31)** on the 2026-08-18 build — stats edit through the menu on a real mon. Still pending from that same QA session: battle behavior with type overrides (N-05) and uncancellable Lv16 evolution B-button test (N-04).
 
 Debug loop notes for next time: boot hook = `CB2_SynthMenuBootDebug 80EC820 0` in CFRU `hooks` (80EC820 = CB2_InitCopyrightScreenAfterBootup; REMOVE before release build — currently removed). mGBA GDB stub: `mGBA -g` + `arm-none-eabi-gdb -batch`; use **hbreak** (sw breaks in ROM don't stick), one fresh mGBA per gdb session (stub can't re-attach after detach). Useful fixed addrs: gWindows 0x020204B4, dma3 queue 0x030000C8 (locked/cursor 0x030008C8/C9), bg configs 0x030008D0.
 
