@@ -489,6 +489,7 @@ CreateShedinja 080CE748 2
 RemoveEvoItem 080CED5C 0
 EvolutionMovesHook 080CEDD4 1
 SynthUncancellableEvoHook 08015AE4 0
+SynthSummaryTypeIconsHook 08138A38 0
 
 ##Follow Me
 FollowMe_SetStateHook 08063CF4 1

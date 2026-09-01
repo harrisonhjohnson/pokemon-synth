@@ -155,6 +155,16 @@ Camomons as the template (it is the one existing feature that replaces types per
     is the point.
   - `IsSpeciesOfType` (util.c) and the ~100 other species-keyed readers (dex/dexnav display,
     item/scripting checks, exp/catch) — the known "refinements, not blockers" set.
+  - **Summary screen UN-excluded 2026-08-31** (QA: type picker edits didn't show on the summary
+    screen — the first excluded reader to become player-visible). Vanilla `BufferMonInfo` caches
+    `gSpeciesInfo` types into `sMonSummaryScreen->monTypes` before drawing. Fixed with
+    `SynthSummaryTypeIconsHook` (`hooks` entry `08138A38 0` = entry of the static
+    `PokeSum_PrintMonTypeIcons`; address from `pokefirered.elf` nm — statics aren't in the map but
+    ARE in the elf, easier than N-04's ROM scan): re-stamps monTypes via new
+    `SynthFixSummaryScreenTypes` (synth_core.c) through `GetMonType`, then re-executes the 4
+    clobbered halfwords. Vanilla struct offsets hardcoded there: ptr @ 0x203B140, monTypes @
+    +0x3220, currentMon @ +0x3290. Byte-verified: trampoline + routine disassembly, BL resolves to
+    SynthFixSummaryScreenTypes, constants built movw-free (Gotcha 11).
 - Verification (house standard, set by N-04): header `POKEMON FIRE` ✅ · control rebuild with edits
   stashed = **byte-identical to the N-04 ROM** (chain deterministic; diff fully attributable) ✅ ·
   re-applied rebuild byte-identical to the first N-05 build ✅ · diff vs N-04 ROM = 853,170 bytes,
@@ -177,7 +187,34 @@ must re-stamp `gBattleMons[bank].type1/type2` itself.
 2. ~~**SynthData struct + save block**~~ — done slice session 2.
 3. ~~Stat override hooks~~ — done 2026-08-12 (above). ~~Type overrides~~ — **done 2026-08-18 (N-05, unattended; see "Type overrides — WIRED" above).**
 4. 18-type starter picker in Oak's lab script (CFRU scrolling multichoice).
-5. Synth menu (3-tab editor per `specs/synth_menu.md`).
+5. Synth menu (sectioned editor per `docs/design/synth_menu.md` — spec is a SECTIONED SINGLE SCREEN, not tabs).
+   **Increment shipped 2026-08-31 — QA PASSED same day (Harrison):** section nav + type picker
+   working in-game; summary screen shows picked types via SynthSummaryTypeIconsHook (see the
+   un-excluded entry in the N-05 section).
+   **Form system shipped later same day (awaiting QA):** preset tables verbatim from
+   specs/synth_system.md (stage 0 → 3 Stage-1 forms, stage 1 → all 6 Stage-2 forms; menu stat
+   order), full-width FORM bar between Banner and Type, form sub-menu (▲/▼ APPLIES presets directly on
+   scroll — Harrison's call 2026-08-31, deviating from the spec's A-to-load dropdown; B closes), `SynthGetClosestForm` auto-assign after every
+   stat adjust (sum-of-abs-diffs; tiebreak current-sticky → closest Spe → lower index). Sprite
+   swaps deferred to the visual pass (no per-form sprites exist). **Window layout note:** bg2's
+   charblock was ~full, so FORM/ABILITY/HELP windows moved to bg1 (SBG_TEXT_2) — each bg's windows
+   get their own 512-tile charblock and vanilla InitWindows allocates bg1's tilemap buffer itself.
+   Rows now: banner 0-1, form 2-3, types/stats 4-15, ability 16-17, help 18-19.
+   **Ability engine shipped same day (awaiting QA):** `SynthGetAbility` wired at the top of
+   `GetMonAbility` (build_pokemon.c — the mon-based waist; switch-in at switching.c:367 already
+   flows through it), plus battle-start ability re-stamp in the N-05 Synth seam
+   (battle_start_turn_start.c) with the Circus `AreAbilitiesSuppressed` edge handled (corrects the
+   banked SuppressedAbilities entry instead of resurrecting a zeroed ability). Menu: ABILITY
+   sub-menu live — pool = Trace + party abilities (deduped, eggs + the edited Synth excluded) +
+   remembered slot; scroll-applies (house rule); landing on a party-sourced ability refreshes
+   rememberedAbilityId + NEW `rememberedSourceSpecies` (u16 @ SynthData+0x26, carved from padding —
+   layout size unchanged, old saves read SPECIES_NONE). Bar shows "Ability (from Source)" via
+   GetAbilityName/GetSpeciesName. **Gotcha 13: `scripts/string.py` strips leading/trailing spaces
+   on every .string line** — spacing around composed fragments (e.g. "(from") must be appended in
+   code as explicit 0x00 space bytes. Note: Trace (the default) COPIES the opponent's ability at
+   battle start — "wrong ability in battle" reports were Trace working as designed.
+   Original scope note: section cursor model (Banner → Type → Ability vertical, Type ↔ Stats horizontal; opens on Banner; two-step B: sub-menu → section → Banner → exit), Type sub-menu (◀/▶ slot, ▲/▼ cycle, "None" on slot 2, duplicate typing prevented, immediate apply — makes N-05 type overrides exercisable in battle), Banner nickname+level with ◀/▶ party-Synth switching, Ability bar display-only (A buzzes; engine unwired). Stats now also recompute on sub-menu exit. Still missing vs spec: Form bar/auto-assign (no preset tables), sprite pane, budget/stat bars as gauges, gym type-unlock gating (`SynthIsTypeUnlocked` treats all-zero `unlockedTypeFlags` as ALL UNLOCKED — interim rule, remove once type_unlock scripts set bits).
+   Build note: `StringGetEnd10`'s decl in `include/string_util.h` is commented out — the live one is in `Vanilla_functions_battle.h`; synth_menu.c carries a local long_call extern. Window charblock budget: bg2 text windows must total < 512 tiles (current layout uses 500 incl. tile 0) or tiles overflow into bg3's zeroed charblock and render blank.
 6. Rival fight 1 with fixed-budget Synth.
 7. ~~Uncancellable evolution enforcement (spec decision #21)~~ — **DONE 2026-08-18 (N-04, unattended).**
    Implemented as scoped below, but via a CFRU hook rather than a bytereplacement: `SynthUncancellableEvoHook`

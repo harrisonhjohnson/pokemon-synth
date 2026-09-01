@@ -347,6 +347,15 @@ void BattleBeginFirstTurn(void)
 						//loop; re-stamp through GetMonType so player-chosen types apply
 						gBattleMons[*bank].type1 = GetMonType(GetBankPartyData(*bank), 0);
 						gBattleMons[*bank].type2 = GetMonType(GetBankPartyData(*bank), 1);
+
+						//Same for the ability: vanilla stamped the species tables. If
+						//abilities are suppressed (Circus), the suppression block above
+						//already banked the ability — correct the banked copy instead.
+						u8 synthAbility = GetMonAbility(GetBankPartyData(*bank));
+						if (AreAbilitiesSuppressed())
+							gNewBS->SuppressedAbilities[*bank] = synthAbility;
+						else
+							gBattleMons[*bank].ability = synthAbility;
 					}
 				}
 

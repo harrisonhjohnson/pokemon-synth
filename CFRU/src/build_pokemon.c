@@ -4554,6 +4554,11 @@ u8 GetMonAbility(const struct Pokemon* mon)
 	u8 ability;
 	u16 species = GetMonData(mon, MON_DATA_SPECIES, NULL);
 
+	//Synth: player-chosen ability (Trace default) overrides the species tables
+	u8 synthAbility = SynthGetAbility((struct Pokemon*) mon);
+	if (synthAbility != ABILITY_NONE)
+		return synthAbility;
+
 	if (mon->hiddenAbility && gBaseStats[species].hiddenAbility != ABILITY_NONE)
 		return GetHiddenAbility(species);
 

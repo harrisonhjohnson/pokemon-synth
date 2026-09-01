@@ -1591,3 +1591,19 @@ SynthUncancellableEvoHook_SetArgs:
 	bx r4 @resume at the bl EvolutionScene
 
 .pool
+@0x8138A38 with r0 - PokeSum_PrintMonTypeIcons entry (vanilla summary screen)
+@SYNTH: BufferMonInfo caches gSpeciesInfo types into sMonSummaryScreen->monTypes,
+@so a Synth's chosen types never display. Re-stamp them through GetMonType, then
+@re-execute the 4 clobbered halfwords (push + 3 loads) and resume.
+SynthSummaryTypeIconsHook:
+	push {r4, r5, r6, lr}
+	bl SynthFixSummaryScreenTypes
+	ldr r6, =0x203B140 @&sMonSummaryScreen (clobbered ldr r6, [pc, ...])
+	ldr r1, [r6]
+	mov r2, #0x32 @0x3214 curPageIndex offset, built without ldr= (Gotcha 11: gas emits Thumb-2 movw)
+	lsl r2, r2, #8
+	add r2, #0x14
+	ldr r0, =0x8138A40 | 1
+	bx r0 @resume at adds r0, r1, r2
+
+.pool

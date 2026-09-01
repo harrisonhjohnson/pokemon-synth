@@ -2,7 +2,7 @@
 Synth
 
 #org @gText_SynthTitle
-SYNTH TUNING
+SYNTH
 
 #org @gText_SynthBudget
 Budget
@@ -25,5 +25,68 @@ Sp. Def
 #org @gText_SynthSpeed
 Speed
 
-#org @gText_SynthHelp
-DPAD: Select/Adjust  B: Exit
+#org @gText_SynthType1
+TYPE 1
+
+#org @gText_SynthType2
+TYPE 2
+
+#org @gText_SynthNone
+None
+
+#org @gText_SynthAbilityLabel
+ABILITY
+
+#org @gText_SynthLv
+Lv.
+
+#org @gText_SynthHelpNav
+DPAD: Move  A: Edit  B: Back
+
+#org @gText_SynthHelpStats
+DPAD: Select/Adjust  B: Done
+
+#org @gText_SynthHelpType
+DPAD: Slot/Cycle  B: Done
+
+#org @gText_SynthFormLabel
+FORM
+
+#org @gText_SynthHelpForm
+UP/DOWN: Change Form  B: Done
+
+#org @gText_SynthFormPhysAttacker
+Physical Attacker
+
+#org @gText_SynthFormSpecAttacker
+Special Attacker
+
+#org @gText_SynthFormBalanced
+Balanced
+
+#org @gText_SynthFormPhysSweeper
+Physical Sweeper
+
+#org @gText_SynthFormSpecSweeper
+Special Sweeper
+
+#org @gText_SynthFormDualAttacker
+Dual Attacker
+
+#org @gText_SynthFormDefensiveWall
+Defensive Wall
+
+#org @gText_SynthFormBulkySweeper
+Bulky Sweeper
+
+#org @gText_SynthFormSpeedySupport
+Speedy Support
+
+#org @gText_SynthAbilityFrom
+(from
+
+#org @gText_SynthParenClose
+)
+
+#org @gText_SynthHelpAbility
+DPAD: Change Ability  B: Done

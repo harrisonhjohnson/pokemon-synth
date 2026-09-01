@@ -44,7 +44,8 @@ struct SynthData
     /*0x20*/ u16 rememberedAbilityId;// 0 = never assigned (decision #11)
     /*0x22*/ u8 unlockedTypeFlags[3];// 18 bits used; bit = type id
     /*0x25*/ u8 statCapPerStat;      // 80/100/120/150/255 by stage
-    /*0x26*/ u8 padding[2];
+    /*0x26*/ u16 rememberedSourceSpecies; // "(from X)" label for rememberedAbilityId;
+                                     // was padding, so old saves read 0 = SPECIES_NONE
 }; // 0x28 = 40 bytes; 6 slots = 240 bytes in save expansion
 
 // --- Species predicates -----------------------------------------------------
@@ -84,6 +85,36 @@ u16 GetSynthAllocatedTotal(struct SynthData* data);
 u16 SynthGetBaseStat(struct Pokemon* mon, u8 statIndex, u16 vanillaValue);
 u8 SynthGetType(struct Pokemon* mon, u8 typeSlot, u8 vanillaType);
 
+// Player-chosen ability (Trace by default); ABILITY_NONE (0) = not a Synth,
+// fall through to the species tables. Wired into GetMonAbility.
+u8 SynthGetAbility(struct Pokemon* mon);
+
+// --- Form (archetype) presets — specs/synth_system.md tables ---------------
+// Stats are in MENU order [HP,Atk,Def,SpA,SpD,Spe], matching SynthData->baseStats.
+struct SynthFormPreset
+{
+    const u8* name;
+    u16 stats[6];
+};
+
+// Stage 0 (SYNTH) exposes forms 0-2; stage 1+ (SYNTH2) all 6.
+u8 GetSynthFormCount(struct SynthData* data);
+const struct SynthFormPreset* GetSynthFormPreset(struct SynthData* data, u8 formId);
+// Spec "Form Auto-Assignment": min sum-of-abs-diffs; ties break current-form
+// sticky, then closest Spe, then lower index.
+u8 SynthGetClosestForm(struct SynthData* data);
+// Loads the preset spread into baseStats and sets activeFormId.
+void SynthApplyFormPreset(struct SynthData* data, u8 formId);
+
+// Re-stamps the vanilla summary screen's cached monTypes through GetMonType
+// so a Synth's chosen types display. Called from SynthSummaryTypeIconsHook.
+void SynthFixSummaryScreenTypes(void);
+
+// Gym-unlock gate for the type picker. INTERIM RULE: while no gym unlock
+// script has ever set a bit (all three flag bytes zero), every type reads as
+// unlocked — remove this fallback once type_unlock_*.pks scripts exist.
+bool8 SynthIsTypeUnlocked(struct SynthData* data, u8 type);
+
 // --- Menu runtime state (fixed EWRAM — CFRU's linker puts .bss in ROM!) -----
 // Lives in the carved Box-22 region after the 6 SynthData slots.
 // 0x203D8DC + 240 = 0x203D9CC. See ram_locs.h.
@@ -94,6 +125,14 @@ struct SynthMenuState
     u8* tilemapPtr; //bg3 tilemap buffer, alive only during CB2_SynthMenu init
     u8 selectedStat;
     u8 windowsOk;
+    u8 section;         // SEC_* cursor position (synth_menu.c)
+    u8 inSubMenu;       // TRUE while editing inside the focused section
+    u8 typeSlot;        // type sub-menu: 0 = primary, 1 = secondary
+    u8 partySynthCount; // party Synth roster for banner left/right switching
+    u8 partyPos;        // index into partySlots
+    u8 partySlots[6];   // party indices of Synth mons
+    u8 formCursor;      // (unused — form scroll applies directly)
+    u8 abilityCursor;   // ability sub-menu: index into the rebuilt pool
     u8 padding[2];
 };
 #define gSynthMenuState ((struct SynthMenuState*) 0x203D9CC)
